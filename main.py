@@ -1,447 +1,474 @@
 from __future__ import annotations
 from enum import Enum
-import random
+import time
+from typing import List, Tuple, Optional, Dict
+from dataclasses import dataclass
+
 
 class Color(Enum):
-	RED = "R"
-	GREEN = "G"
-	BLUE = "B"
-	BLACK = "K"
-	YELLOW = "Y"
+    RED = "R"
+    GREEN = "G"
+    BLUE = "B"
+    BLACK = "K"
+    YELLOW = "Y"
+
 
 # ANSI color codes for terminal output
 ANSI_COLORS = {
-    Color.RED: "\033[91m",      # Bright red
-    Color.GREEN: "\033[92m",    # Bright green
-    Color.BLUE: "\033[94m",     # Bright blue
-    Color.BLACK: "\033[37m",    # Light grey (since pure black might not be visible)
-    Color.YELLOW: "\033[93m",   # Bright yellow
+    Color.RED: "\033[91m",
+    Color.GREEN: "\033[92m",
+    Color.BLUE: "\033[94m",
+    Color.BLACK: "\033[37m",
+    Color.YELLOW: "\033[93m",
 }
-ANSI_RESET = "\033[0m"  # Reset to default color
+ANSI_RESET = "\033[0m"
 
-class Piece:
-    def __init__(self, structure: list[list[Color | None]]):
+
+@dataclass
+class Position:
+    row: int
+    col: int
+
+
+@dataclass
+class PlacementInfo:
+    piece_id: int
+    rotation: int
+    position: Position
+    cells: List[Tuple[int, int, Color]]  # (row, col, color) tuples
+
+
+class FastPiece:
+    def __init__(self, piece_id: int, structure: list[list[Color | None]]):
+        self.piece_id = piece_id
         self.structure = structure
+        # Precompute all rotations and their cell positions
+        self.rotations = self._precompute_rotations()
 
-    def get_rotated(self, times: int = 0) -> Piece:
-        """Return a new piece rotated clockwise by 90 degrees, times times."""
-        if times == 0:
-            return self
-
+    def _precompute_rotations(self) -> List[List[Tuple[int, int, Color]]]:
+        """Precompute all 4 rotations and their occupied cells"""
+        rotations = []
         current = self.structure
-        
-        for _ in range(times):
+
+        for rotation in range(4):
+            cells = []
+            for r in range(2):
+                for c in range(2):
+                    if current[r][c] is not None:
+                        cells.append((r, c, current[r][c]))
+            rotations.append(cells)
+
+            # Rotate for next iteration
             current = [
                 [current[1][0], current[0][0]],
-                [current[1][1], current[0][1]]
+                [current[1][1], current[0][1]],
             ]
-        
-        return Piece(current)
 
-piece_placement: list[list[Piece | None]] = [[None for _ in range(5)] for _ in range(5)]
-used_field: list[list[bool | bool]] = [[False for _ in range(5)] for _ in range(5)]
+        return rotations
 
-pieces = [
-   Piece([[Color.YELLOW, Color.BLUE],[Color.GREEN, None]]),
-   Piece([[Color.YELLOW, Color.BLUE],[Color.GREEN, None]]),
-   Piece([[Color.RED, Color.BLUE],[Color.BLACK, None]]),
-   Piece([[Color.RED, Color.GREEN],[Color.YELLOW, None]]),
-   Piece([[Color.RED, Color.YELLOW],[Color.BLUE, None]]),
-   Piece([[Color.GREEN, Color.YELLOW],[Color.BLACK, None]]),
-   Piece([[Color.BLACK, Color.GREEN],[Color.BLUE, None]]),
-   Piece([[Color.BLACK, None],[Color.RED, None]]),
-   Piece([[Color.BLACK, None],[Color.RED, None]]),
-]
 
-def render_letter(letter: Color | None) -> str:
-    if letter is None:
-        return " "
-    return f"{ANSI_COLORS[letter]}{letter.value}{ANSI_RESET}"
-
-def render_piece(piece: Piece) -> str:
-    """Renders a piece as a string for terminal output."""
-    result = []
-    
-    # Top border
-    top_border = ""
-    for col in range(2):
-        if piece.structure[0][col] is not None:
-            top_border += "+---"
-    if top_border:
-        top_border += "+"
-        result.append(top_border)
-    
-    # Top row content
-    top_content = ""
-    for col in range(2):
-        if piece.structure[0][col] is not None:
-            top_content += f"| {render_letter(piece.structure[0][col])} "
-    if top_content:
-        top_content += "|"
-        result.append(top_content)
-    
-    # Middle border
-    middle_border = ""
-    for col in range(2):
-        if piece.structure[0][col] is not None or piece.structure[1][col] is not None:
-            middle_border += "+---"
-    if middle_border:
-        middle_border += "+"
-        result.append(middle_border)
-    
-    # Bottom row content
-    bottom_content = ""
-    for col in range(2):
-        if piece.structure[1][col] is not None:
-            bottom_content += f"| {render_letter(piece.structure[1][col])} "
-    if bottom_content:
-        bottom_content += "|"
-        result.append(bottom_content)
-    
-    # Bottom border
-    bottom_border = ""
-    for col in range(2):
-        if piece.structure[1][col] is not None:
-            bottom_border += "+---"
-    if bottom_border:
-        bottom_border += "+"
-        result.append(bottom_border)
-    
-    return "\n".join(result)
-
-def print_colors_with_codes():
-    """Print all colors in terminal with their ANSI color codes"""
-    print("Colors and their ANSI codes:")
-    print("=" * 40)
-    
-    for color in Color:
-        ansi_code = ANSI_COLORS[color]
-        # Print color name, ANSI code, and colored text
-        print(f"{ansi_code}●●● {color.name} ●●●{ANSI_RESET}")
-    
-    print("=" * 40)
-    print()
-    
-def print_sudoku_pieces():
-    print("Sudoku pieces:")
-    print("-" * 30)
-    for i, piece in enumerate(pieces, 1):
-        print(f"Piece {i}:")
-        print(render_piece(piece))
-        print()
-
-def print_board(board: list[list[Color | None]]):
-    print("+---+---+---+---+---+")
-    for row in board:
-        row_str = "|"
-        for cell in row:
-            if cell is None:
-                row_str += "  |"
-            else:
-                row_str += f" {render_letter(cell)} |"
-        print(row_str)
-        print("+---+---+---+---+---+")
-    print()
-
-def test_graphics():
-    print_colors_with_codes()
-    print_sudoku_pieces()
-    print_board(
-        [
-            [c for c in Color],
-            [c for c in Color],
-            [c for c in Color],
-            [c for c in Color],
-            [c for c in Color]
-        ]
-    )
-    
 class SudokuSolver:
     def __init__(self, show_progress=False):
         self.board = [[None for _ in range(5)] for _ in range(5)]
-        self.used_pieces = [False] * len(pieces)
         self.solutions = []
         self.show_progress = show_progress
         self.attempts = 0
-        self.max_depth = 0
 
-    def is_valid_placement(self, piece: Piece, row: int, col: int) -> bool:
-        """Check if placing a piece at (row, col) is valid"""
-        # Check if piece fits within board bounds
-        for r in range(2):
-            for c in range(2):
-                if piece.structure[r][c] is not None:
-                    board_row, board_col = row + r, col + c
-                    if board_row >= 5 or board_col >= 5:
-                        return False
-                    # Check if cell is already occupied
-                    if self.board[board_row][board_col] is not None:
-                        return False
-        return True
+        # Create pieces
+        self.pieces = self._create_fast_pieces()
 
-    def place_piece(self, piece: Piece, row: int, col: int):
-        """Place a piece on the board at (row, col)"""
-        for r in range(2):
-            for c in range(2):
-                if piece.structure[r][c] is not None:
-                    self.board[row + r][col + c] = piece.structure[r][c]
+        # Fast constraint tracking using sets
+        self.row_colors = [set() for _ in range(5)]
+        self.col_colors = [set() for _ in range(5)]
+        self.used_pieces = set()
+        self.placed_pieces = []  # Stack of placements for backtracking
 
-    def remove_piece(self, piece: Piece, row: int, col: int):
-        """Remove a piece from the board at (row, col)"""
-        for r in range(2):
-            for c in range(2):
-                if piece.structure[r][c] is not None:
-                    self.board[row + r][col + c] = None
+        # Track which piece is at each position for solution display
+        self.piece_positions = (
+            {}
+        )  # (row, col) -> (piece_id, rotation, original_position)
 
-    def is_valid_board(self) -> bool:
-        """Check if current board state satisfies sudoku constraints"""
-        # Check rows for unique colors
-        for row in self.board:
-            colors_in_row = [cell for cell in row if cell is not None]
-            if len(colors_in_row) != len(set(colors_in_row)):
+        # Precompute all valid placements
+        self.valid_placements = self._precompute_valid_placements()
+
+    def _create_fast_pieces(self) -> List[FastPiece]:
+        """Create fast pieces with precomputed rotations"""
+        piece_structures = [
+            [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
+            [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
+            [[Color.RED, Color.BLUE], [Color.BLACK, None]],
+            [[Color.RED, Color.GREEN], [Color.YELLOW, None]],
+            [[Color.RED, Color.YELLOW], [Color.BLUE, None]],
+            [[Color.GREEN, Color.YELLOW], [Color.BLACK, None]],
+            [[Color.BLACK, Color.GREEN], [Color.BLUE, None]],
+            [[Color.BLACK, None], [Color.RED, None]],
+            [[Color.BLACK, None], [Color.RED, None]],
+        ]
+
+        return [
+            FastPiece(i, structure)
+            for i, structure in enumerate(piece_structures)
+        ]
+
+    def _precompute_valid_placements(self) -> Dict[int, List[PlacementInfo]]:
+        """Precompute all valid placements for each piece"""
+        placements = {}
+
+        for piece in self.pieces:
+            piece_placements = []
+
+            for rotation in range(4):
+                cells = piece.rotations[rotation]
+
+                # Try all possible positions
+                for start_row in range(5):
+                    for start_col in range(5):
+                        # Check if piece fits at this position
+                        valid = True
+                        absolute_cells = []
+
+                        for r, c, color in cells:
+                            abs_row, abs_col = start_row + r, start_col + c
+                            if abs_row >= 5 or abs_col >= 5:
+                                valid = False
+                                break
+                            absolute_cells.append((abs_row, abs_col, color))
+
+                        if valid:
+                            placement = PlacementInfo(
+                                piece_id=piece.piece_id,
+                                rotation=rotation,
+                                position=Position(start_row, start_col),
+                                cells=absolute_cells,
+                            )
+                            piece_placements.append(placement)
+
+            placements[piece.piece_id] = piece_placements
+
+        return placements
+
+    def can_place(self, placement: PlacementInfo) -> bool:
+        """Ultra-fast constraint checking using precomputed sets"""
+        for row, col, color in placement.cells:
+            # Check if cell is occupied
+            if self.board[row][col] is not None:
                 return False
 
-        # Check columns for unique colors
-        for col in range(5):
-            colors_in_col = [self.board[row][col] for row in range(5) if self.board[row][col] is not None]
-            if len(colors_in_col) != len(set(colors_in_col)):
+            # Check color constraints instantly using sets
+            if color in self.row_colors[row] or color in self.col_colors[col]:
                 return False
 
         return True
 
-    def is_complete(self) -> bool:
-        """Check if puzzle is complete (all pieces used and board filled)"""
-        # Check if all pieces are used
-        if not all(self.used_pieces):
-            return False
-        
-        # Check if board is completely filled
-        for row in self.board:
-            for cell in row:
-                if cell is None:
-                    return False
-        
-        # Check final constraints
-        return self.is_valid_board()
+    def place_piece(self, placement: PlacementInfo) -> None:
+        """Place piece and update constraint tracking"""
+        for row, col, color in placement.cells:
+            self.board[row][col] = color
+            self.row_colors[row].add(color)
+            self.col_colors[col].add(color)
+            # Track piece position for display
+            self.piece_positions[(row, col)] = (
+                placement.piece_id,
+                placement.rotation,
+                placement.position,
+            )
 
-    def solve(self, depth=0) -> bool:
-        """Optimized backtracking solver with progress tracking"""
+        self.used_pieces.add(placement.piece_id)
+        self.placed_pieces.append(placement)
+
+    def remove_piece(self, placement: PlacementInfo) -> None:
+        """Remove piece and update constraint tracking"""
+        for row, col, color in placement.cells:
+            self.board[row][col] = None
+            self.row_colors[row].remove(color)
+            self.col_colors[col].remove(color)
+            # Remove piece position tracking
+            if (row, col) in self.piece_positions:
+                del self.piece_positions[(row, col)]
+
+        self.used_pieces.remove(placement.piece_id)
+        self.placed_pieces.pop()
+
+    def get_most_constrained_piece(self) -> Optional[int]:
+        """Get the piece with fewest valid placements (MRV heuristic)"""
+        if len(self.used_pieces) == len(self.pieces):
+            return None
+
+        min_placements = float("inf")
+        best_piece = None
+
+        for piece_id in range(len(self.pieces)):
+            if piece_id in self.used_pieces:
+                continue
+
+            valid_count = 0
+            for placement in self.valid_placements[piece_id]:
+                if self.can_place(placement):
+                    valid_count += 1
+
+            if valid_count < min_placements:
+                min_placements = valid_count
+                best_piece = piece_id
+
+                # If no valid placements, fail fast
+                if valid_count == 0:
+                    return best_piece
+
+        return best_piece
+
+    def solve(self) -> bool:
+        """Optimized solver with constraint propagation and heuristics"""
         self.attempts += 1
-        self.max_depth = max(self.max_depth, depth)
-        
-        # Show progress periodically - less frequent for performance
-        if self.show_progress and self.attempts % 10000 == 0:
-            pieces_placed = sum(self.used_pieces)
-            print(f"Progress: {self.attempts:,} attempts | Pieces: {pieces_placed}/9 | Depth: {depth}")
-        
-        # If all pieces are used, check if solution is valid
-        if all(self.used_pieces):
-            if self.is_complete():
-                # Store a copy of the solution
-                solution = [row[:] for row in self.board]
-                self.solutions.append(solution)
-                if self.show_progress:
-                    print(f"\n🎉 SOLUTION FOUND after {self.attempts:,} attempts!")
+
+        # Success condition
+        if len(self.used_pieces) == len(self.pieces):
+            # Verify solution is complete and valid
+            if self.is_complete_solution():
+                self.solutions.append([row[:] for row in self.board])
                 return True
             return False
 
-        # Early pruning: check if current state can lead to valid solution
-        if not self.can_be_completed():
+        # Get most constrained piece (MRV - Minimum Remaining Values)
+        piece_id = self.get_most_constrained_piece()
+        if piece_id is None:
             return False
 
-        # Try placing each unused piece at each valid position
-        # Use smarter ordering: try pieces with fewer placement options first
-        piece_options = []
-        for piece_idx, piece in enumerate(pieces):
-            if not self.used_pieces[piece_idx]:
-                valid_placements = self.count_valid_placements(piece)
-                piece_options.append((valid_placements, piece_idx, piece))
-        
-        # Sort by number of valid placements (constraint satisfaction heuristic)
-        piece_options.sort()
-        
-        for _, piece_idx, piece in piece_options:
-            # Try all 4 rotations of the piece
-            for rotation in range(4):
-                rotated_piece = piece.get_rotated(rotation)
-                
-                # Try all positions on the board
-                for row in range(5):
-                    for col in range(5):
-                        if self.is_valid_placement(rotated_piece, row, col):
-                            # Place the piece
-                            self.place_piece(rotated_piece, row, col)
-                            self.used_pieces[piece_idx] = True
-                            
-                            # Check if placement maintains sudoku constraints
-                            if self.is_valid_board():
-                                # Recursively try to place remaining pieces
-                                if self.solve(depth + 1):
-                                    return True
-                            
-                            # Backtrack
-                            self.remove_piece(rotated_piece, row, col)
-                            self.used_pieces[piece_idx] = False
-        
+        # Try all valid placements for this piece
+        valid_placements = [
+            p for p in self.valid_placements[piece_id] if self.can_place(p)
+        ]
+
+        # Sort placements by how much they constrain future moves (LCV - Least Constraining Value)
+        valid_placements.sort(key=lambda p: self.count_conflicts(p))
+
+        for placement in valid_placements:
+            # Make move
+            self.place_piece(placement)
+
+            # Forward checking: ensure remaining pieces can still be placed
+            if self.has_solution_potential():
+                if self.solve():
+                    return True
+
+            # Backtrack
+            self.remove_piece(placement)
+
         return False
 
-    def count_valid_placements(self, piece: Piece) -> int:
-        """Count how many valid placements a piece has on current board"""
-        count = 0
-        for rotation in range(4):
-            rotated_piece = piece.get_rotated(rotation)
-            for row in range(5):
-                for col in range(5):
-                    if self.is_valid_placement(rotated_piece, row, col):
-                        # Temporarily place to check constraints
-                        self.place_piece(rotated_piece, row, col)
-                        if self.is_valid_board():
-                            count += 1
-                        self.remove_piece(rotated_piece, row, col)
-        return count
+    def count_conflicts(self, placement: PlacementInfo) -> int:
+        """Count how many future placements this move would eliminate"""
+        conflicts = 0
 
-    def can_be_completed(self) -> bool:
-        """Check if current board state can potentially lead to a complete solution"""
-        # Check if any row or column already has duplicate colors
-        for row in range(5):
-            colors_in_row = [self.board[row][col] for col in range(5) if self.board[row][col] is not None]
-            if len(colors_in_row) != len(set(colors_in_row)):
+        # Temporarily place the piece
+        self.place_piece(placement)
+
+        # Count valid placements for remaining pieces
+        for piece_id in range(len(self.pieces)):
+            if piece_id in self.used_pieces:
+                continue
+
+            for other_placement in self.valid_placements[piece_id]:
+                if not self.can_place(other_placement):
+                    conflicts += 1
+
+        # Remove the piece
+        self.remove_piece(placement)
+
+        return conflicts
+
+    def has_solution_potential(self) -> bool:
+        """Quick check if remaining pieces can theoretically be placed"""
+        for piece_id in range(len(self.pieces)):
+            if piece_id in self.used_pieces:
+                continue
+
+            # Check if this piece has at least one valid placement
+            has_valid_placement = False
+            for placement in self.valid_placements[piece_id]:
+                if self.can_place(placement):
+                    has_valid_placement = True
+                    break
+
+            if not has_valid_placement:
                 return False
-        
-        for col in range(5):
-            colors_in_col = [self.board[row][col] for row in range(5) if self.board[row][col] is not None]
-            if len(colors_in_col) != len(set(colors_in_col)):
-                return False
-        
+
         return True
 
-    def show_current_state(self, depth, final=False):
-        """Display current board state and progress info"""
-        import os
-        if not final:
-            os.system('clear' if os.name == 'posix' else 'cls')  # Clear screen
-        
-        pieces_placed = sum(self.used_pieces)
-        print(f"{'='*50}")
-        print(f"Attempt #{self.attempts} | Depth: {depth} | Pieces placed: {pieces_placed}/{len(pieces)}")
-        print(f"Max depth reached: {self.max_depth}")
-        print(f"{'='*50}")
-        
-        # Show which pieces are used
-        print("Pieces status:")
-        for i, used in enumerate(self.used_pieces):
-            status = "✅" if used else "⭕"
-            print(f"  Piece {i+1}: {status}")
-        
-        print("\nCurrent board:")
-        self.print_current_board()
-        
-        # if not final:
-        #     time.sleep(0.1)  # Small delay to see the progress
+    def is_complete_solution(self) -> bool:
+        """Verify the solution is complete and valid"""
+        # Check all cells are filled
+        for row in range(5):
+            for col in range(5):
+                if self.board[row][col] is None:
+                    return False
 
-    def print_current_board(self):
-        """Print the current state of the board"""
-        print("+---+---+---+---+---+")
-        for row in self.board:
-            row_str = "|"
-            for cell in row:
-                if cell is None:
-                    row_str += " . |"
-                else:
-                    row_str += f" {render_letter(cell)} |"
-            print(row_str)
-            print("+---+---+---+---+---+")
-        print()
+        # Check each row has all 5 colors
+        for row in range(5):
+            if len(self.row_colors[row]) != 5:
+                return False
+
+        # Check each column has all 5 colors
+        for col in range(5):
+            if len(self.col_colors[col]) != 5:
+                return False
+
+        return True
+
+    def render_letter(self, color: Color) -> str:
+        """Render colored letter for terminal display"""
+        return f"{ANSI_COLORS[color]}{color.value}{ANSI_RESET}"
 
     def print_solution(self):
-        """Print the solved board"""
+        """Print the solved board with colors and piece positions"""
         if not self.solutions:
             print("No solution found!")
             return
-        
-        print("Solution found!")
-        print("=" * 25)
-        print_board(self.solutions[0])
-        
-        # Verify solution
-        self.verify_solution()
 
-    def verify_solution(self):
-        """Verify that the solution meets all constraints"""
-        if not self.solutions:
-            return
-            
+        print("\n🎉 SOLUTION FOUND! 🎉")
+        print("=" * 50)
+
+        # Print the colored board
+        print("\n📋 Solved Board:")
+        print("+---+---+---+---+---+")
+
         board = self.solutions[0]
-        print("Verification:")
-        
+        for row in board:
+            row_str = "|"
+            for cell in row:
+                row_str += f" {self.render_letter(cell)} |"
+            print(row_str)
+            print("+---+---+---+---+---+")
+
+        print(f"\nSolved in {self.attempts} attempts!")
+
+        # Show piece placement information
+        self.show_piece_placements()
+
+        # Verify constraints
+        self.verify_solution(board)
+
+    def show_piece_placements(self):
+        """Show which piece is placed at which position"""
+        print("\n🧩 Piece Placement Details:")
+        print("=" * 50)
+
+        # Group positions by piece
+        piece_locations = {}
+        for (row, col), (
+            piece_id,
+            rotation,
+            original_pos,
+        ) in self.piece_positions.items():
+            if piece_id not in piece_locations:
+                piece_locations[piece_id] = []
+            piece_locations[piece_id].append(
+                (row, col, rotation, original_pos)
+            )
+
+        # Display each piece's placement
+        for piece_id in sorted(piece_locations.keys()):
+            locations = piece_locations[piece_id]
+
+            # Find the top-left corner (original position)
+            min_row = min(row for row, col, _, _ in locations)
+            min_col = min(
+                col for row, col, _, _ in locations if row == min_row
+            )
+
+            # Get rotation info
+            _, _, rotation, _ = locations[
+                0
+            ]  # All cells of same piece have same rotation
+
+            print(f"\n🔸 Piece {piece_id + 1}:")
+            print(f"   Position: Row {min_row + 1}, Column {min_col + 1}")
+            print(f"   Rotation: {rotation * 90}° clockwise")
+            print(f"   Occupies cells:")
+
+            # Show all cells this piece occupies
+            for row, col, _, _ in sorted(locations):
+                color = self.board[row][col]
+                print(
+                    f"     • ({row + 1}, {col + 1}) = {self.render_letter(color)}"
+                )
+
+    def verify_solution(self, board):
+        """Verify the solution meets all constraints"""
+        print("\n✅ Verification:")
+
+        all_valid = True
+
         # Check rows
-        print("Row constraints:")
+        print("\n🔄 Row Constraints:")
         for i, row in enumerate(board):
-            colors = [cell.name for cell in row]
-            unique_colors = set(colors)
-            print(f"  Row {i+1}: {colors} -> {len(unique_colors) == 5} (unique: {sorted(unique_colors)})")
-        
+            colors = {cell for cell in row}
+            if len(colors) == 5 and colors == set(Color):
+                print(f"  Row {i+1}: ✅ All 5 colors unique")
+            else:
+                print(f"  Row {i+1}: ❌ Missing or duplicate colors")
+                all_valid = False
+
         # Check columns
-        print("Column constraints:")
+        print("\n📏 Column Constraints:")
         for j in range(5):
-            col = [board[i][j].name for i in range(5)]
-            unique_colors = set(col)
-            print(f"  Col {j+1}: {col} -> {len(unique_colors) == 5} (unique: {sorted(unique_colors)})")
+            colors = {board[i][j] for i in range(5)}
+            if len(colors) == 5 and colors == set(Color):
+                print(f"  Col {j+1}: ✅ All 5 colors unique")
+            else:
+                print(f"  Col {j+1}: ❌ Missing or duplicate colors")
+                all_valid = False
 
-def solve_riddle(show_progress=False):
-    """Main solver function"""
-    print("Starting Wood Sudoku Solver...")
-    print("Puzzle constraints:")
-    print("- Each piece used exactly once")
-    print("- Each row has unique colors")
-    print("- Each column has unique colors")
-    print("- All cells filled")
-    print()
-    
-    solver = SudokuSolver(show_progress=show_progress)
-    
-    if show_progress:
-        print("Solving with progress display...")
-        print("Press Ctrl+C to stop if it takes too long")
-    else:
-        print("Solving...")
-    
-    try:
-        if solver.solve():
-            solver.print_solution()
-            print(f"\nSolver statistics:")
-            print(f"- Total attempts: {solver.attempts}")
-            print(f"- Maximum depth reached: {solver.max_depth}")
+        print("\n🧩 Piece Usage:")
+        used_count = len(
+            set(piece_id for piece_id, _, _ in self.piece_positions.values())
+        )
+        if used_count == 9:
+            print(f"  ✅ All 9 pieces used exactly once")
         else:
-            print("No solution exists for this puzzle!")
-            print(f"Tried {solver.attempts} combinations")
-    except KeyboardInterrupt:
-        print(f"\n\nSolver interrupted by user after {solver.attempts} attempts")
-        print(f"Maximum depth reached: {solver.max_depth}")
-        if solver.solutions:
-            solver.print_solution()
-        else:
-            print("No solution found yet.")
+            print(f"  ❌ Only {used_count}/9 pieces used")
+            all_valid = False
 
-def main():
-    print("Wood Sudoku Puzzle")
-    print("=" * 30)
+        if all_valid:
+            print("\n🎊 Perfect solution! All constraints satisfied!")
+        else:
+            print("\n⚠️  Solution has constraint violations!")
+
+
+def solve():
+    """Main fast solver function"""
+    print("🚀 Ultra-Fast Wood Sudoku Solver with Piece Tracking")
+    print("=" * 60)
+    print("Using advanced constraint satisfaction techniques:")
+    print("• Precomputed piece placements")
+    print("• Instant constraint validation")
+    print("• Most Constrained Variable (MCV) heuristic")
+    print("• Least Constraining Value (LCV) heuristic")
+    print("• Forward checking and early pruning")
+    print("• Complete piece position tracking")
     print()
-    
-    # Show the pieces
-    print_sudoku_pieces()
-    
-    # Ask user if they want to see progress
-    import sys
-    show_progress = False
-    if len(sys.argv) > 1 and sys.argv[1] == "--progress":
-        show_progress = True
-        print("🔍 Progress mode enabled - this will be slower but shows the solving process")
+
+    start_time = time.time()
+    solver = SudokuSolver()
+
+    print("Solving...")
+    if solver.solve():
+        end_time = time.time()
+        solver.print_solution()
+
+        print(f"\n⚡ Performance Statistics:")
+        print(f"• Solving time: {end_time - start_time:.4f} seconds")
+        print(f"• Total attempts: {solver.attempts:,}")
+        if end_time - start_time > 0:
+            print(
+                f"• Speed: {solver.attempts / (end_time - start_time):.0f} attempts/second"
+            )
+
     else:
-        print("💨 Fast mode - use '--progress' flag to see solving progress")
-    
-    # Solve the puzzle
-    solve_riddle(show_progress=show_progress)
+        end_time = time.time()
+        print("❌ No solution exists for this puzzle!")
+        print(f"Verified in {end_time - start_time:.4f} seconds")
+        print(f"Tried {solver.attempts:,} combinations")
+
 
 if __name__ == "__main__":
-    main()
+    solve()
