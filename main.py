@@ -4,6 +4,8 @@ import time
 from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 
+# Piece configurations - modify these to change the puzzle
+
 
 class Color(Enum):
     RED = "R"
@@ -12,6 +14,37 @@ class Color(Enum):
     BLACK = "K"
     YELLOW = "Y"
 
+"""
+the pieces are defined as 2x2 grids with colors or None for empty cells.
+Each piece is represented as a list of lists, where each inner list is a row. e.g.:
+[
+    [R, G],
+    [B, None]
+]
+looks like piece:
+[R][G]
+[B]
+and 
+[
+    [B, None],
+    [R, None]
+]
+looks like piece:
+[B]
+[R]
+"""
+
+PIECE_STRUCTURES = [
+    [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
+    [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
+    [[Color.RED, Color.BLUE], [Color.BLACK, None]],
+    [[Color.RED, Color.GREEN], [Color.YELLOW, None]],
+    [[Color.RED, Color.YELLOW], [Color.BLUE, None]],
+    [[Color.GREEN, Color.YELLOW], [Color.BLACK, None]],
+    [[Color.BLACK, Color.GREEN], [Color.BLUE, None]],
+    [[Color.BLACK, None], [Color.RED, None]],
+    [[Color.BLACK, None], [Color.RED, None]],
+]
 
 # ANSI color codes for terminal output
 ANSI_COLORS = {
@@ -84,30 +117,16 @@ class SudokuSolver:
         self.placed_pieces = []  # Stack of placements for backtracking
 
         # Track which piece is at each position for solution display
-        self.piece_positions = (
-            {}
-        )  # (row, col) -> (piece_id, rotation, original_position)
+        self.piece_at_cell = {}  # (row, col) -> piece_id
 
         # Precompute all valid placements
         self.valid_placements = self._precompute_valid_placements()
 
     def _create_fast_pieces(self) -> List[FastPiece]:
         """Create fast pieces with precomputed rotations"""
-        piece_structures = [
-            [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
-            [[Color.YELLOW, Color.BLUE], [Color.GREEN, None]],
-            [[Color.RED, Color.BLUE], [Color.BLACK, None]],
-            [[Color.RED, Color.GREEN], [Color.YELLOW, None]],
-            [[Color.RED, Color.YELLOW], [Color.BLUE, None]],
-            [[Color.GREEN, Color.YELLOW], [Color.BLACK, None]],
-            [[Color.BLACK, Color.GREEN], [Color.BLUE, None]],
-            [[Color.BLACK, None], [Color.RED, None]],
-            [[Color.BLACK, None], [Color.RED, None]],
-        ]
-
         return [
             FastPiece(i, structure)
-            for i, structure in enumerate(piece_structures)
+            for i, structure in enumerate(PIECE_STRUCTURES)
         ]
 
     def _precompute_valid_placements(self) -> Dict[int, List[PlacementInfo]]:
@@ -166,12 +185,8 @@ class SudokuSolver:
             self.board[row][col] = color
             self.row_colors[row].add(color)
             self.col_colors[col].add(color)
-            # Track piece position for display
-            self.piece_positions[(row, col)] = (
-                placement.piece_id,
-                placement.rotation,
-                placement.position,
-            )
+            # Track piece at each cell for display
+            self.piece_at_cell[(row, col)] = placement.piece_id
 
         self.used_pieces.add(placement.piece_id)
         self.placed_pieces.append(placement)
@@ -182,9 +197,9 @@ class SudokuSolver:
             self.board[row][col] = None
             self.row_colors[row].remove(color)
             self.col_colors[col].remove(color)
-            # Remove piece position tracking
-            if (row, col) in self.piece_positions:
-                del self.piece_positions[(row, col)]
+            # Remove piece tracking
+            if (row, col) in self.piece_at_cell:
+                del self.piece_at_cell[(row, col)]
 
         self.used_pieces.remove(placement.piece_id)
         self.placed_pieces.pop()
@@ -318,6 +333,56 @@ class SudokuSolver:
         """Render colored letter for terminal display"""
         return f"{ANSI_COLORS[color]}{color.value}{ANSI_RESET}"
 
+    def render_piece_display(self, piece: FastPiece) -> str:
+        """Render a piece for visual display"""
+        lines = []
+        structure = piece.structure
+        piece_num = piece.piece_id + 1
+
+        # Create the piece display
+        for row in range(2):
+            line = ""
+            for col in range(2):
+                if structure[row][col] is not None:
+                    color = structure[row][col]
+                    colored_number = (
+                        f"{ANSI_COLORS[color]}{piece_num}{ANSI_RESET}"
+                    )
+                    line += f"[{colored_number}]"
+                else:
+                    line += " · "
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def print_all_pieces(self):
+        """Print all pieces with their IDs for easy identification"""
+        print("\n🧩 Available Pieces:")
+        print("=" * 60)
+
+        # Print pieces in rows of 3
+        pieces_per_row = 3
+        for row_start in range(0, len(self.pieces), pieces_per_row):
+            pieces_in_row = self.pieces[row_start : row_start + pieces_per_row]
+
+            # Print piece shapes (row 1)
+            shape_row1 = []
+            for piece in pieces_in_row:
+                piece_lines = self.render_piece_display(piece).split("\n")
+                shape_row1.append(piece_lines[0].ljust(12))
+            print("    ".join(shape_row1))
+
+            # Print piece shapes (row 2)
+            shape_row2 = []
+            for piece in pieces_in_row:
+                piece_lines = self.render_piece_display(piece).split("\n")
+                shape_row2.append(piece_lines[1].ljust(12))
+            print("    ".join(shape_row2))
+
+            print()  # Empty line between rows
+
+        print("=" * 60)
+
     def print_solution(self):
         """Print the solved board with colors and piece positions"""
         if not self.solutions:
@@ -327,70 +392,27 @@ class SudokuSolver:
         print("\n🎉 SOLUTION FOUND! 🎉")
         print("=" * 50)
 
-        # Print the colored board
-        print("\n📋 Solved Board:")
+        # Print the board with piece numbers in colors
+        print("\n📋 Solved Board (Piece Numbers):")
         print("+---+---+---+---+---+")
 
         board = self.solutions[0]
-        for row in board:
+        for row_idx, row in enumerate(board):
             row_str = "|"
-            for cell in row:
-                row_str += f" {self.render_letter(cell)} |"
+            for col_idx, cell in enumerate(row):
+                piece_id = self.piece_at_cell.get((row_idx, col_idx), 0)
+                piece_number = piece_id + 1  # Convert to 1-based numbering
+                colored_number = (
+                    f"{ANSI_COLORS[cell]}{piece_number}{ANSI_RESET}"
+                )
+                row_str += f" {colored_number} |"
             print(row_str)
             print("+---+---+---+---+---+")
 
         print(f"\nSolved in {self.attempts} attempts!")
 
-        # Show piece placement information
-        self.show_piece_placements()
-
         # Verify constraints
         self.verify_solution(board)
-
-    def show_piece_placements(self):
-        """Show which piece is placed at which position"""
-        print("\n🧩 Piece Placement Details:")
-        print("=" * 50)
-
-        # Group positions by piece
-        piece_locations = {}
-        for (row, col), (
-            piece_id,
-            rotation,
-            original_pos,
-        ) in self.piece_positions.items():
-            if piece_id not in piece_locations:
-                piece_locations[piece_id] = []
-            piece_locations[piece_id].append(
-                (row, col, rotation, original_pos)
-            )
-
-        # Display each piece's placement
-        for piece_id in sorted(piece_locations.keys()):
-            locations = piece_locations[piece_id]
-
-            # Find the top-left corner (original position)
-            min_row = min(row for row, col, _, _ in locations)
-            min_col = min(
-                col for row, col, _, _ in locations if row == min_row
-            )
-
-            # Get rotation info
-            _, _, rotation, _ = locations[
-                0
-            ]  # All cells of same piece have same rotation
-
-            print(f"\n🔸 Piece {piece_id + 1}:")
-            print(f"   Position: Row {min_row + 1}, Column {min_col + 1}")
-            print(f"   Rotation: {rotation * 90}° clockwise")
-            print(f"   Occupies cells:")
-
-            # Show all cells this piece occupies
-            for row, col, _, _ in sorted(locations):
-                color = self.board[row][col]
-                print(
-                    f"     • ({row + 1}, {col + 1}) = {self.render_letter(color)}"
-                )
 
     def verify_solution(self, board):
         """Verify the solution meets all constraints"""
@@ -419,9 +441,7 @@ class SudokuSolver:
                 all_valid = False
 
         print("\n🧩 Piece Usage:")
-        used_count = len(
-            set(piece_id for piece_id, _, _ in self.piece_positions.values())
-        )
+        used_count = len(set(self.piece_at_cell.values()))
         if used_count == 9:
             print(f"  ✅ All 9 pieces used exactly once")
         else:
@@ -436,19 +456,22 @@ class SudokuSolver:
 
 def solve():
     """Main fast solver function"""
-    print("🚀 Ultra-Fast Wood Sudoku Solver with Piece Tracking")
-    print("=" * 60)
+    print("🚀 Ultra-Fast Wood Sudoku Solver")
+    print("=" * 40)
     print("Using advanced constraint satisfaction techniques:")
     print("• Precomputed piece placements")
     print("• Instant constraint validation")
     print("• Most Constrained Variable (MCV) heuristic")
     print("• Least Constraining Value (LCV) heuristic")
     print("• Forward checking and early pruning")
-    print("• Complete piece position tracking")
+    print("• Piece numbers displayed in cell colors")
     print()
 
     start_time = time.time()
     solver = SudokuSolver()
+
+    # Show all pieces for reference
+    solver.print_all_pieces()
 
     print("Solving...")
     if solver.solve():
